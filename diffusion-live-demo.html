@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch Diffusion Happen — Live Demo</title>
+<style>
+  :root{
+    --bg:#0E0B1A; --panel:#171231; --panel2:#1d1740;
+    --violet:#7C3AED; --cyan:#06B6D4; --rose:#FB7185;
+    --amber:#F59E0B; --green:#10B981;
+    --text:#F5F3FC; --mute:#B7AEDB; --muteDark:#8b84b0;
+    --line:#2a2350;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(900px 500px at 18% -8%, rgba(124,58,237,.22), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, rgba(6,182,212,.14), transparent 55%),
+      var(--bg);
+    color:var(--text); font-family:var(--sans);
+    min-height:100%; padding:26px clamp(16px,4vw,54px);
+    -webkit-font-smoothing:antialiased;
+  }
+  /* faint dot field, echoing the deck motif */
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.5;
+    background-image:radial-gradient(rgba(183,174,219,.10) 1px, transparent 1.4px);
+    background-size:30px 30px; mask:linear-gradient(180deg,#000,transparent 70%);
+  }
+  .wrap{max-width:1180px;margin:0 auto;position:relative}
+  header{margin-bottom:22px}
+  .eyebrow{
+    font-size:12px; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--cyan); font-weight:700;
+  }
+  h1{
+    font-size:clamp(26px,4.4vw,44px); line-height:1.04; margin:.18em 0 .12em;
+    font-weight:800; letter-spacing:-.5px;
+  }
+  h1 .g{background:linear-gradient(90deg,var(--violet),var(--cyan) 55%,var(--rose));
+    -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .sub{color:var(--mute); font-size:clamp(14px,1.6vw,17px); max-width:60ch; line-height:1.5}
+
+  .grid{display:grid; grid-template-columns:1.35fr .95fr; gap:24px; align-items:start}
+  @media (max-width:900px){ .grid{grid-template-columns:1fr} }
+
+  .stage{
+    background:linear-gradient(180deg,var(--panel),#120e29);
+    border:1px solid var(--line); border-radius:20px; padding:22px;
+    box-shadow:0 30px 80px -40px rgba(0,0,0,.9);
+  }
+  .canvasFrame{
+    position:relative; border-radius:16px; overflow:hidden;
+    border:1px solid #342c63;
+    box-shadow:0 0 0 1px rgba(124,58,237,.25), 0 0 60px -8px rgba(124,58,237,.55);
+    background:#000; aspect-ratio:3/2;
+  }
+  canvas#main{width:100%; height:100%; display:block; image-rendering:auto}
+  .stamp{
+    position:absolute; left:12px; top:11px; font-family:var(--mono); font-size:12px;
+    color:var(--text); background:rgba(14,11,26,.62); border:1px solid var(--line);
+    padding:5px 9px; border-radius:8px; backdrop-filter:blur(4px); letter-spacing:.02em;
+  }
+  .stamp b{color:var(--cyan); font-weight:700}
+  .caption{margin-top:14px; color:var(--mute); font-size:14px; line-height:1.5; min-height:42px}
+  .caption b{color:var(--text)}
+
+  /* progress / schedule strip */
+  .schedule{margin-top:16px}
+  .schedlabel{display:flex; justify-content:space-between; font-size:11px;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--muteDark); margin-bottom:6px}
+  .bar{height:9px; border-radius:6px; background:#221b46; overflow:hidden; position:relative}
+  .fill{height:100%; width:100%;
+    background:linear-gradient(90deg,var(--violet),var(--cyan));
+    transform-origin:left; transition:transform .04s linear}
+
+  /* filmstrip */
+  .strip{display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:16px}
+  .frame{aspect-ratio:3/2; border-radius:8px; overflow:hidden; border:1px solid var(--line);
+    background:#0c0920; position:relative}
+  .frame canvas{width:100%;height:100%;display:block}
+  .frame span{position:absolute; bottom:3px; right:5px; font-family:var(--mono);
+    font-size:9px; color:var(--mute); background:rgba(0,0,0,.45); padding:1px 4px; border-radius:4px}
+
+  /* console */
+  .console{
+    background:linear-gradient(180deg,var(--panel),#120e29);
+    border:1px solid var(--line); border-radius:20px; padding:22px;
+  }
+  .grp{margin-bottom:20px}
+  .grp:last-child{margin-bottom:0}
+  .glab{font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muteDark);
+    margin-bottom:9px; display:flex; align-items:center; gap:8px}
+  .glab .tie{color:var(--violet); font-weight:700}
+
+  .prompts{display:grid; gap:8px}
+  .pbtn{
+    text-align:left; cursor:pointer; border:1px solid var(--line); background:var(--panel2);
+    color:var(--text); padding:11px 13px; border-radius:11px; font-size:14px; font-family:var(--sans);
+    display:flex; align-items:center; gap:11px; transition:.15s;
+  }
+  .pbtn:hover{border-color:#4a3f88}
+  .pbtn .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .pbtn.on{border-color:var(--violet); background:rgba(124,58,237,.16);
+    box-shadow:0 0 0 1px rgba(124,58,237,.4)}
+  .pbtn small{color:var(--muteDark); font-size:12px}
+
+  .seg{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+  .seg button{
+    cursor:pointer; border:1px solid var(--line); background:var(--panel2); color:var(--mute);
+    padding:10px 6px; border-radius:11px; font-family:var(--sans); font-size:13px; transition:.15s;
+    display:flex; flex-direction:column; gap:2px; align-items:center;
+  }
+  .seg button b{color:var(--text); font-size:15px; font-weight:700}
+  .seg button.on{border-color:var(--cyan); background:rgba(6,182,212,.14); color:var(--text)}
+  .seg button.on b{color:var(--cyan)}
+
+  input[type=range]{width:100%; accent-color:var(--rose); margin:4px 0 2px}
+  .srow{display:flex; justify-content:space-between; font-size:13px; color:var(--mute)}
+  .srow b{color:var(--rose); font-family:var(--mono)}
+  .hint{font-size:12px; color:var(--muteDark); margin-top:4px; line-height:1.45}
+
+  .actions{display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:8px; margin-top:4px}
+  .actions.two{grid-template-columns:1fr 1fr}
+  .act{cursor:pointer; border:none; border-radius:11px; padding:13px 8px; font-weight:700;
+    font-size:14px; font-family:var(--sans); transition:.15s; color:#0b0820}
+  .play{background:linear-gradient(90deg,var(--violet),var(--cyan)); color:#fff}
+  .play:hover{filter:brightness(1.08)}
+  .ghost{background:var(--panel2); color:var(--text); border:1px solid var(--line)}
+  .ghost:hover{border-color:#4a3f88}
+
+  .readout{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:6px}
+  .stat{background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:11px 12px}
+  .stat .k{font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muteDark)}
+  .stat .v{font-family:var(--mono); font-size:17px; font-weight:700; margin-top:3px}
+  .v.violet{color:var(--violet)} .v.cyan{color:var(--cyan)} .v.rose{color:var(--rose)}
+
+  footer{margin-top:22px; color:var(--muteDark); font-size:13px; text-align:center; line-height:1.5}
+  footer b{color:var(--mute)}
+  .kbd{font-family:var(--mono); background:var(--panel2); border:1px solid var(--line);
+    padding:1px 6px; border-radius:5px; color:var(--mute); font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Live Demo · The Engine</div>
+    <h1>Watch <span class="g">Diffusion</span> Happen</h1>
+    <p class="sub">Every image model starts with pure noise and removes it, a little at a time, until a picture is left behind. Press play and watch the static become a scene.</p>
+  </header>
+
+  <div class="grid">
+    <!-- STAGE -->
+    <div class="stage">
+      <div class="canvasFrame">
+        <canvas id="main" width="480" height="320"></canvas>
+        <div class="stamp">step <b id="stStep">0</b> / <span id="stTotal">25</span> · noise <b id="stNoise">100%</b></div>
+      </div>
+      <div class="caption" id="caption">Choose a prompt and press <b>Play</b>. The model never "draws" — it predicts the noise, subtracts it, and repeats.</div>
+
+      <div class="schedule">
+        <div class="schedlabel"><span>pure noise · x_T</span><span>clean image · x_0</span></div>
+        <div class="bar"><div class="fill" id="fill"></div></div>
+      </div>
+
+      <div class="strip" id="strip"></div>
+    </div>
+
+    <!-- CONSOLE -->
+    <div class="console">
+      <div class="grp">
+        <div class="glab">Prompt <span class="tie">· text → image</span></div>
+        <div class="prompts" id="prompts">
+          <button class="pbtn on" data-scene="0"><span class="dot" style="background:var(--amber)"></span><div>A sunset over mountains <small>warm sky, layered ridges</small></div></button>
+          <button class="pbtn" data-scene="1"><span class="dot" style="background:var(--cyan)"></span><div>A lone planet in deep space <small>starfield, a ringed world</small></div></button>
+          <button class="pbtn" data-scene="2"><span class="dot" style="background:var(--green)"></span><div>A koi pond at dusk <small>lily pads, drifting fish</small></div></button>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="glab">Sampling steps <span class="tie">· DDPM vs DDIM</span></div>
+        <div class="seg" id="seg">
+          <button data-steps="8"><b>8</b>DDIM · fast</button>
+          <button class="on" data-steps="25"><b>25</b>balanced</button>
+          <button data-steps="50"><b>50</b>DDPM · smooth</button>
+        </div>
+        <div class="hint">Fewer steps = faster, slightly rougher. The leap from 1000 steps to a handful is the DDIM idea.</div>
+      </div>
+
+      <div class="grp">
+        <div class="glab">Denoising strength <span class="tie">· the creative throttle</span></div>
+        <div class="srow"><span>how far back into noise we start</span><b id="strVal">1.00</b></div>
+        <input type="range" id="strength" min="0.15" max="1" step="0.05" value="1">
+        <div class="hint" id="strHint">1.00 = start from pure noise (text-to-image). Lower it and the model starts from your source and stays closer to it (image-to-image).</div>
+      </div>
+
+      <div class="grp">
+        <div class="actions" id="acts">
+          <button class="act play" id="play">▶ Play</button>
+          <button class="act ghost" id="step">Step ›</button>
+          <button class="act ghost" id="reset">Reset</button>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="readout">
+          <div class="stat"><div class="k">Step</div><div class="v violet" id="rStep">0 / 25</div></div>
+          <div class="stat"><div class="k">Noise left</div><div class="v cyan" id="rNoise">100%</div></div>
+          <div class="stat"><div class="k">ᾱ (signal)</div><div class="v rose" id="rAlpha">0.00</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Self-contained · no network, no GPU, no API — runs from this one file. &nbsp;·&nbsp;
+    <b>Space</b> <span class="kbd">play/pause</span> &nbsp; <b>→</b> <span class="kbd">single step</span> &nbsp; <b>R</b> <span class="kbd">reset</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  const W=480, H=320, N=W*H;
+  const main=document.getElementById('main');
+  const ctx=main.getContext('2d');
+  const off=document.createElement('canvas'); off.width=W; off.height=H;
+  const octx=off.getContext('2d');
+
+  // ---------- procedural target scenes (no external assets) ----------
+  function drawScene(idx){
+    const g=octx;
+    if(idx===0){ // sunset over mountains
+      const sky=g.createLinearGradient(0,0,0,H);
+      sky.addColorStop(0,'#3a1d5e'); sky.addColorStop(.45,'#b8456b');
+      sky.addColorStop(.7,'#f5933f'); sky.addColorStop(1,'#ffcf7a');
+      g.fillStyle=sky; g.fillRect(0,0,W,H);
+      // sun
+      const sx=W*0.5, sy=H*0.52, r=46;
+      const sun=g.createRadialGradient(sx,sy,4,sx,sy,r*2.2);
+      sun.addColorStop(0,'#fff4d6'); sun.addColorStop(.4,'#ffd166'); sun.addColorStop(1,'rgba(255,209,102,0)');
+      g.fillStyle=sun; g.beginPath(); g.arc(sx,sy,r*2.2,0,7); g.fill();
+      g.fillStyle='#fff1c9'; g.beginPath(); g.arc(sx,sy,r*0.7,0,7); g.fill();
+      // mountains
+      function ridge(baseY,color,amp,seed){
+        g.fillStyle=color; g.beginPath(); g.moveTo(0,H);
+        for(let x=0;x<=W;x+=12){
+          const y=baseY+Math.sin((x*0.012)+seed)*amp+Math.sin((x*0.05)+seed*2)*amp*0.4;
+          g.lineTo(x,y);
+        }
+        g.lineTo(W,H); g.closePath(); g.fill();
+      }
+      ridge(H*0.62,'#6d3b86',26,1.2);
+      ridge(H*0.72,'#4a2a6b',30,3.1);
+      ridge(H*0.82,'#2c1a4a',24,5.5);
+      // water + reflection
+      g.fillStyle='#241640'; g.fillRect(0,H*0.84,W,H*0.16);
+      g.globalAlpha=.35; g.fillStyle='#ffd166';
+      g.fillRect(sx-30,H*0.84,60,H*0.16); g.globalAlpha=1;
+    } else if(idx===1){ // lone planet in space
+      g.fillStyle='#05030f'; g.fillRect(0,0,W,H);
+      const neb=g.createRadialGradient(W*0.7,H*0.3,10,W*0.7,H*0.3,W*0.7);
+      neb.addColorStop(0,'rgba(124,58,237,.35)'); neb.addColorStop(1,'rgba(5,3,15,0)');
+      g.fillStyle=neb; g.fillRect(0,0,W,H);
+      // stars
+      let s=99; const rnd=()=>{s=(s*9301+49297)%233280; return s/233280;};
+      for(let i=0;i<160;i++){ const x=rnd()*W,y=rnd()*H,r=rnd()*1.3+.3;
+        g.globalAlpha=rnd()*.7+.3; g.fillStyle='#dfe9ff'; g.beginPath(); g.arc(x,y,r,0,7); g.fill();}
+      g.globalAlpha=1;
+      // planet
+      const px=W*0.4,py=H*0.55,pr=78;
+      const pg=g.createRadialGradient(px-28,py-28,8,px,py,pr);
+      pg.addColorStop(0,'#7fd1e6'); pg.addColorStop(.5,'#2f7fb5'); pg.addColorStop(1,'#15314f');
+      g.fillStyle=pg; g.beginPath(); g.arc(px,py,pr,0,7); g.fill();
+      // ring
+      g.save(); g.translate(px,py); g.rotate(-0.4); g.scale(1,0.32);
+      g.lineWidth=9; g.strokeStyle='rgba(245,158,11,.75)'; g.beginPath(); g.arc(0,0,pr*1.5,0,7); g.stroke();
+      g.restore();
+    } else { // koi pond at dusk
+      const wat=g.createLinearGradient(0,0,0,H);
+      wat.addColorStop(0,'#0c4a4a'); wat.addColorStop(.5,'#0a6e63'); wat.addColorStop(1,'#063b3f');
+      g.fillStyle=wat; g.fillRect(0,0,W,H);
+      // ripples
+      g.strokeStyle='rgba(255,255,255,.10)'; g.lineWidth=2;
+      for(let i=0;i<6;i++){ g.beginPath(); g.ellipse(W*0.5,H*0.5,40+i*34,16+i*13,0,0,7); g.stroke(); }
+      // lily pads
+      function pad(x,y,r){ g.fillStyle='#1f7a3d'; g.beginPath();
+        g.arc(x,y,r,0.5,Math.PI*2+0.2); g.lineTo(x,y); g.fill();
+        g.fillStyle='#2c9a52'; g.beginPath(); g.arc(x,y,r*0.7,0.6,Math.PI*2+0.1); g.lineTo(x,y); g.fill(); }
+      pad(W*0.22,H*0.30,34); pad(W*0.75,H*0.66,40); pad(W*0.6,H*0.22,26);
+      // koi
+      function koi(x,y,rot,col){ g.save(); g.translate(x,y); g.rotate(rot);
+        g.fillStyle=col; g.beginPath(); g.ellipse(0,0,26,12,0,0,7); g.fill();
+        g.beginPath(); g.moveTo(-24,0); g.lineTo(-40,-11); g.lineTo(-40,11); g.fill();
+        g.fillStyle='rgba(255,255,255,.85)'; g.beginPath(); g.arc(8,-2,4,0,7); g.fill(); g.restore(); }
+      koi(W*0.4,H*0.55,0.3,'#fb7185'); koi(W*0.62,H*0.46,-2.4,'#f59e0b');
+    }
+    return octx.getImageData(0,0,W,H).data;
+  }
+
+  // ---------- fixed noise field (Gaussian) for a coherent trajectory ----------
+  let eps=new Float32Array(N*3);
+  function reseedNoise(){
+    for(let i=0;i<N*3;i+=2){
+      let u=Math.random()||1e-9, v=Math.random();
+      const m=Math.sqrt(-2*Math.log(u));
+      eps[i]=m*Math.cos(2*Math.PI*v);
+      eps[i+1]=m*Math.sin(2*Math.PI*v);
+    }
+  }
+
+  // ---------- cosine noise schedule: noiseFraction -> abar (signal retained) ----------
+  // nf in [0,1]; nf=1 => pure noise (abar~0), nf=0 => clean (abar~1)
+  function abarOf(nf){
+    const sft=0.008;
+    const f=Math.cos(((nf+sft)/(1+sft))*Math.PI/2);
+    return Math.max(0,Math.min(1,f*f));
+  }
+
+  // ---------- state ----------
+  let scene=0, totalSteps=25, strength=1.0;
+  let x0=drawScene(0);
+  const frame=new ImageData(W,H);
+  let curStep=0, playing=false, raf=null, lastT=0, dwell=0;
+
+  // filmstrip
+  const strip=document.getElementById('strip'); const thumbs=[];
+  for(let i=0;i<6;i++){ const d=document.createElement('div'); d.className='frame';
+    const c=document.createElement('canvas'); c.width=120; c.height=80;
+    const sp=document.createElement('span'); sp.textContent='—';
+    d.appendChild(c); d.appendChild(sp); strip.appendChild(d); thumbs.push({c:c.getContext('2d'),sp:sp}); }
+
+  // render the image at a given noise fraction
+  function renderAt(nf){
+    const ab=abarOf(nf);
+    const a=Math.sqrt(ab), b=Math.sqrt(1-ab);
+    const out=frame.data;
+    for(let p=0,j=0;p<N;p++,j+=4){
+      for(let ch=0;ch<3;ch++){
+        const v=x0[j+ch]/127.5-1;            // normalize source to [-1,1]
+        let val=a*v+b*eps[p*3+ch];           // forward marginal
+        out[j+ch]=Math.max(0,Math.min(255,(val+1)*127.5));
+      }
+      out[j+3]=255;
+    }
+    ctx.putImageData(frame,0,0);
+    return ab;
+  }
+
+  function nfAtStep(k){            // k = 0..totalSteps
+    const start=strength;          // begin partway for img2img
+    return start*(1-k/totalSteps);
+  }
+
+  function captureThumb(slot,k){
+    if(slot<0||slot>5) return;
+    thumbs[slot].c.drawImage(main,0,0,120,80);
+    thumbs[slot].sp.textContent = k===0?'noise':(k===totalSteps?'final':'t'+k);
+  }
+
+  function paintStep(k){
+    const nf=nfAtStep(k);
+    const ab=renderAt(nf);
+    const noisePct=Math.round(nf*100);
+    document.getElementById('stStep').textContent=k;
+    document.getElementById('stTotal').textContent=totalSteps;
+    document.getElementById('stNoise').textContent=noisePct+'%';
+    document.getElementById('rStep').textContent=k+' / '+totalSteps;
+    document.getElementById('rNoise').textContent=noisePct+'%';
+    document.getElementById('rAlpha').textContent=ab.toFixed(2);
+    document.getElementById('fill').style.transform='scaleX('+(k/totalSteps)+')';
+    // map 6 filmstrip slots across the run
+    const slot=Math.round(k/totalSteps*5);
+    if(k===0||k===totalSteps||k===Math.round(totalSteps*slot/5)) captureThumb(slot,k);
+    updateCaption(k,noisePct);
+  }
+
+  function updateCaption(k,np){
+    const cap=document.getElementById('caption');
+    if(k===0){ cap.innerHTML='This is <b>pure noise</b> — the model\'s blank canvas. There is no picture here yet, only random static.'; }
+    else if(k>=totalSteps){ cap.innerHTML='Done. The image emerged entirely by <b>removing noise</b> — the model predicted what was \"not the picture\" and subtracted it, '+totalSteps+' times.'; }
+    else if(np>60){ cap.innerHTML='Early steps: only <b>rough shapes and color</b> survive. The model commits to a layout before any detail.'; }
+    else if(np>25){ cap.innerHTML='Mid denoising: structure is locking in. Each step is a <b>small, confident correction</b>, not a redraw.'; }
+    else { cap.innerHTML='Final steps: the model is now resolving <b>fine detail and texture</b> from what little noise remains.'; }
+  }
+
+  // ---------- animation loop ----------
+  function tick(t){
+    if(!playing){ return; }
+    if(!lastT) lastT=t;
+    const perStep = totalSteps<=8?260 : totalSteps<=25?95 : 45; // chunky for DDIM, smooth for DDPM
+    if(t-lastT>=perStep){
+      lastT=t; curStep++;
+      paintStep(curStep);
+      if(curStep>=totalSteps){ playing=false; setPlayBtn(); return; }
+    }
+    raf=requestAnimationFrame(tick);
+  }
+
+  function setPlayBtn(){ document.getElementById('play').innerHTML = playing?'❚❚ Pause':(curStep>=totalSteps?'↻ Replay':'▶ Play'); }
+
+  function play(){
+    if(curStep>=totalSteps) resetRun(true);
+    playing=true; lastT=0; setPlayBtn(); raf=requestAnimationFrame(tick);
+  }
+  function pause(){ playing=false; setPlayBtn(); }
+
+  function resetRun(fresh){
+    playing=false; curStep=0; if(fresh) reseedNoise();
+    // clear filmstrip
+    thumbs.forEach(t=>{ t.c.clearRect(0,0,120,80); t.c.fillStyle='#0c0920'; t.c.fillRect(0,0,120,80); t.sp.textContent='—'; });
+    paintStep(0); setPlayBtn();
+  }
+
+  // ---------- wire controls ----------
+  document.getElementById('play').onclick=()=> playing?pause():play();
+  document.getElementById('step').onclick=()=>{ pause(); if(curStep<totalSteps){ curStep++; paintStep(curStep);} };
+  document.getElementById('reset').onclick=()=> resetRun(true);
+
+  document.querySelectorAll('#prompts .pbtn').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#prompts .pbtn').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); scene=+b.dataset.scene; x0=drawScene(scene); resetRun(true);
+  });
+  document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); totalSteps=+b.dataset.steps; resetRun(false);
+  });
+  const str=document.getElementById('strength');
+  str.oninput=()=>{
+    strength=+str.value; document.getElementById('strVal').textContent=strength.toFixed(2);
+    const h=document.getElementById('strHint');
+    if(strength>=0.99) h.textContent='1.00 = start from pure noise (text-to-image). Lower it and the model starts from your source and stays closer to it (image-to-image).';
+    else h.innerHTML='Image-to-image: starts only '+Math.round(strength*100)+'% into the noise, so the result keeps more of the original. This is the dial behind \"make it a bit different.\"';
+    resetRun(false);
+  };
+
+  document.addEventListener('keydown',e=>{
+    if(e.code==='Space'){ e.preventDefault(); playing?pause():play(); }
+    else if(e.code==='ArrowRight'){ pause(); if(curStep<totalSteps){curStep++; paintStep(curStep);} }
+    else if(e.key.toLowerCase()==='r'){ resetRun(true); }
+  });
+
+  // boot
+  reseedNoise(); resetRun(false);
+})();
+</script>
+</body>
+</html>
